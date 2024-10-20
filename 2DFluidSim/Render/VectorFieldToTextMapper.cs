@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace _2DFluidSim.Render;
-internal class VectorFieldToTextMapper
-{
+internal class VectorFieldToTextMapper {
     //public const char
     //    DEFAULT_R_CHAR = '▶',
     //    DEFAULT_UR_CHAR = '◥',
@@ -46,39 +41,35 @@ internal class VectorFieldToTextMapper
     public VectorFieldToTextMapper() { }
     public VectorFieldToTextMapper(float zeroAmplitude) { ZeroAmplitude = zeroAmplitude; }
 
-    public char Map(Vector2 vector)
-    {
+    public char Map(Vector2 vector) {
         float amplitude = vector.Length();
-        if (amplitude < ZeroAmplitude) return ZeroChar;
+        if(amplitude < ZeroAmplitude) return ZeroChar;
 
         Vector2 normalized = Vector2.Normalize(vector);
-        float angle = (float)Math.Acos(normalized.X);
+        float angle = (float) Math.Acos(normalized.X);
         //if(normalized.Y < 0) angle += (float) Math.PI;
-        if (normalized.Y < 0) angle = (float)(2 * Math.PI) - angle;
+        if(normalized.Y < 0) angle = (float) (2 * Math.PI) - angle;
 
-        if (angle < Math.PI / 8) return RChar;
-        if (angle < 3 * Math.PI / 8) return URChar;
-        if (angle < 5 * Math.PI / 8) return UChar;
-        if (angle < 7 * Math.PI / 8) return ULChar;
-        if (angle < 9 * Math.PI / 8) return LChar;
-        if (angle < 11 * Math.PI / 8) return DLChar;
-        if (angle < 13 * Math.PI / 8) return DChar;
-        if (angle < 15 * Math.PI / 8) return DRChar;
+        if(angle < Math.PI / 8) return RChar;
+        if(angle < 3 * Math.PI / 8) return URChar;
+        if(angle < 5 * Math.PI / 8) return UChar;
+        if(angle < 7 * Math.PI / 8) return ULChar;
+        if(angle < 9 * Math.PI / 8) return LChar;
+        if(angle < 11 * Math.PI / 8) return DLChar;
+        if(angle < 13 * Math.PI / 8) return DChar;
+        if(angle < 15 * Math.PI / 8) return DRChar;
         return RChar;
     }
 
 
 
-    public char[,] Map(Vector2[,] field)
-    {
+    public char[,] Map(Vector2[,] field) {
         int width = field.GetLength(0);
         int height = field.GetLength(1);
 
         char[,] result = new char[width, height];
-        for (int x = 0; x < width; x++)
-        {
-            for (int y = 0; y < height; y++)
-            {
+        for(int x = 0; x < width; x++) {
+            for(int y = 0; y < height; y++) {
                 result[x, y] = Map(field[x, y]);
             }
         }
@@ -86,16 +77,13 @@ internal class VectorFieldToTextMapper
         return result;
     }
 
-    public string ToString(char[,] charField)
-    {
+    public string ToString(char[,] charField) {
         int width = charField.GetLength(0);
         int height = charField.GetLength(1);
 
         StringBuilder sb = new();
-        for (int y = height - 1; y >= 0; y--)
-        {
-            for (int x = 0; x < width; x++)
-            {
+        for(int y = height - 1; y >= 0; y--) {
+            for(int x = 0; x < width; x++) {
                 sb.Append(charField[x, y]);
             }
 
@@ -107,16 +95,13 @@ internal class VectorFieldToTextMapper
         return sb.ToString();
     }
 
-    public string MapToString(Vector2[,] field)
-    {
+    public string MapToString(Vector2[,] field) {
         int width = field.GetLength(0);
         int height = field.GetLength(1);
 
         StringBuilder sb = new();
-        for (int y = height - 1; y >= 0; y--)
-        {
-            for (int x = 0; x < width; x++)
-            {
+        for(int y = height - 1; y >= 0; y--) {
+            for(int x = 0; x < width; x++) {
                 sb.Append(Map(field[x, y]));
             }
 

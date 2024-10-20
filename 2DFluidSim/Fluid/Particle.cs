@@ -1,21 +1,18 @@
 ﻿using System.Numerics;
 
 namespace _2DFluidSim.Fluid;
-internal struct Particle
-{
+internal struct Particle {
     public float Mass;
     public Vector2 Position;
     public Vector2 Velocity;
 
     public Particle() { }
-    public Particle(Particle particle)
-    {
+    public Particle(Particle particle) {
         Mass = particle.Mass;
         Position = particle.Position;
         Velocity = particle.Velocity;
     }
-    public Particle(float mass, Vector2 position, Vector2 velocity)
-    {
+    public Particle(float mass, Vector2 position, Vector2 velocity) {
         Mass = mass;
         Position = position;
         Velocity = velocity;

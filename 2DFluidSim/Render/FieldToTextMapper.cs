@@ -1,12 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace _2DFluidSim.Render;
-internal class FieldToTextMapper
-{
+internal class FieldToTextMapper {
     public const char
         DEFAULT_LOWEST_CHAR = ' ',
         DEFAULT_LOWER_CHAR = '.',
@@ -41,27 +36,23 @@ internal class FieldToTextMapper
         HigherLimit = DEFAULT_HIGHER_LIMIT,
         HighestLimit = DEFAULT_HIGHEST_LIMIT;
 
-    public char Map(float value)
-    {
-        if (value > HighestLimit) return HighestChar;
-        if (value > HigherLimit) return HigherChar;
-        if (value > HighLimit) return HighChar;
-        if (value > MediumLimit) return MediumChar;
-        if (value > LowLimit) return LowChar;
-        if (value > LowerLimit) return LowerChar;
+    public char Map(float value) {
+        if(value > HighestLimit) return HighestChar;
+        if(value > HigherLimit) return HigherChar;
+        if(value > HighLimit) return HighChar;
+        if(value > MediumLimit) return MediumChar;
+        if(value > LowLimit) return LowChar;
+        if(value > LowerLimit) return LowerChar;
         return LowestChar;
     }
 
-    public char[,] Map(float[,] field)
-    {
+    public char[,] Map(float[,] field) {
         int width = field.GetLength(0);
         int height = field.GetLength(1);
 
         char[,] result = new char[width, height];
-        for (int x = 0; x < width; x++)
-        {
-            for (int y = 0; y < height; y++)
-            {
+        for(int x = 0; x < width; x++) {
+            for(int y = 0; y < height; y++) {
                 result[x, y] = Map(field[x, y]);
             }
         }
@@ -69,16 +60,13 @@ internal class FieldToTextMapper
         return result;
     }
 
-    public string ToString(char[,] charField)
-    {
+    public string ToString(char[,] charField) {
         int width = charField.GetLength(0);
         int height = charField.GetLength(1);
 
         StringBuilder sb = new();
-        for (int y = height - 1; y >= 0; y--)
-        {
-            for (int x = 0; x < width; x++)
-            {
+        for(int y = height - 1; y >= 0; y--) {
+            for(int x = 0; x < width; x++) {
                 sb.Append(charField[x, y]);
             }
 
@@ -90,16 +78,13 @@ internal class FieldToTextMapper
         return sb.ToString();
     }
 
-    public string MapToString(float[,] field)
-    {
+    public string MapToString(float[,] field) {
         int width = field.GetLength(0);
         int height = field.GetLength(1);
 
         StringBuilder sb = new();
-        for (int y = height - 1; y >= 0; y--)
-        {
-            for (int x = 0; x < width; x++)
-            {
+        for(int y = height - 1; y >= 0; y--) {
+            for(int x = 0; x < width; x++) {
                 sb.Append(Map(field[x, y]));
             }
 
