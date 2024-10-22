@@ -46,7 +46,7 @@ internal class BitmapPointRenderer {
         Bitmap result = new(ResolutionX, ResolutionY);
         Mapper.ExpectedDensity = (float) Math.Pow(Step * PRESSURE_RESOLUTION_DOWNSCALE * ParticleDensity, 2); // In case it got changed
 
-        float[,] pressureMap = Mapper.Map(points);
+        //float[,] pressureMap = Mapper.Map(points);
 
         for(int x = 0; x < ResolutionX; x++) {
             for(int y = 0; y < ResolutionY; y++) {
@@ -55,13 +55,15 @@ internal class BitmapPointRenderer {
         }
 
         foreach(Vector2 point in points) {
-            float pressure = pressureMap[Mapper.Pixel(point).X, Mapper.Pixel(point).Y];
-            float huePercent = (pressure - MinPressure) / (MaxPressure - MinPressure);
-            if(huePercent < 0) huePercent = 0;
-            if(huePercent > 1) huePercent = 1;
-            float hue = 120 * (1 - huePercent);
-            (int r, int g, int b) = HsvToRgb(hue, 1, 1);
-            Color pointColor = Color.FromArgb(r, g, b);
+            //float pressure = pressureMap[Mapper.Pixel(point).X, Mapper.Pixel(point).Y];
+            //float huePercent = (pressure - MinPressure) / (MaxPressure - MinPressure);
+            //if(huePercent < 0) huePercent = 0;
+            //if(huePercent > 1) huePercent = 1;
+            //float hue = 120 * (1 - huePercent);
+            //(int r, int g, int b) = HsvToRgb(hue, 1, 1);
+            //Color pointColor = Color.FromArgb(r, g, b);
+
+            Color pointColor = Color.LimeGreen;
 
             (int x, int y) = Pixel(point);
             TryDrawPoint(pointColor, x, y, result);
@@ -95,6 +97,7 @@ internal class BitmapPointRenderer {
 
     private void TryDrawPoint(Color color, int x, int y, Bitmap image) {
         Color fullC = color;
+        if(InBounds(x, y, image) && ColorEquals(image.GetPixel(x, y), color)) fullC = Color.FromArgb(255, 0, 0); // Check for overlapping particles
         Color halfC = MixColors(fullC, BGColor);
         Color quartC = MixColors(halfC, BGColor);
 
@@ -136,6 +139,9 @@ internal class BitmapPointRenderer {
             if(y >= 0 && y < image.Height) image.SetPixel(x, y, LineColor);
         }
     }
+
+    // For debug
+    private bool ColorEquals(Color c1, Color c2) => c1.R == c2.R && c2.G == c2.G && c1.B == c2.B;
 
     /// <summary>
     /// Taken straight from https://stackoverflow.com/questions/1335426/is-there-a-built-in-c-net-system-api-for-hsv-to-rgb

@@ -40,7 +40,7 @@ internal class FluidRenderer {
                 progressHandler?.Invoke(((i * StepsPerFrame) + j + 1) / (float) (frames * StepsPerFrame));
             }
 
-            Bitmap image = imageRenderer.Render(box.Particles.Select(p => p.Position).ToArray());
+            Bitmap image = imageRenderer.Render(box.GetParticles().Select(p => p.Position).ToArray());
             image.Save($"{imagesFolder}{outName}{ZeroPad(i, 5)}.{imagesExtension}");
         }
 

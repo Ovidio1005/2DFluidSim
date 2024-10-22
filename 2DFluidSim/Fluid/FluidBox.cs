@@ -1,185 +1,265 @@
-﻿using _2DFluidSim.Fields;
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace _2DFluidSim.Fluid;
 internal class FluidBox {
-    private Random RNG = new Random();
+    // TODO:
+    //   Particles are currently ending up overlapping and then being apparently stuck together for some reason.
+    //   Basically everything collapses in on itself. Figure out why it's happening and how to fix it.
+    //   That's quite weird though. If particles don't overlap perfectly, they should be pushed out of eachother, and
+    //   if they do, I should get a divide by zero error. Unless NaN or Infinity?
+    protected const int PARTICLE_ARRAY_STEP = 65536;
+    protected const float INTERACTION_THRESHOLD = 0.01f;
+    protected static Random RNG = new Random();
 
-    private PointDensityMapper PMapper;
-    private FieldDifferentiator Differentiator = new();
+    public float InteractionRadius { get; private set; }
+    public int ParticleCount { get; private set; } = 0;
 
-    public readonly float Width;
-    public readonly float Height;
-
-    public float SimulationTime { get; private set; } = 0;
-
-    // kg/m^2
-    public float FluidDensity = 1000;
-    public readonly float ParticleDensity = 100;
-    public float ParticleMass {
-        get => FluidDensity / (ParticleDensity * ParticleDensity);
-    }
-
-    public float PressureSensitivity = 1000;
-    public float Damp = 1f;
-    public float Noise = 0.01f;
-    public Vector2 Gravity = new Vector2(0, -9.81f);
-
-    public float WallRadius = 0.001f;
+    public float Width { get => TRCorner.X - BLCorner.X; }
+    public float Height { get => TRCorner.Y - BLCorner.Y; }
 
     public float TimeStep = 0.01f;
+    public float Viscosity = 1;
+    public float Dampening = 0.5f;
+    public float ParticleRadius = 0.01f;
+    public float ParticleMass = 1; // Unused for now
+    public Vector2 Gravity = new(0, -9.81f);
 
-    public List<Particle> Particles = new List<Particle>();
+    Vector2 BLCorner;
+    Vector2 TRCorner;
 
-    public FluidBox(float width, float height, float particleDensity = 100) {
-        Width = width;
-        Height = height;
-        ParticleDensity = particleDensity;
-
-        float pMapStep = 1 / ParticleDensity;
-        int pMapResX = (int) (width / pMapStep) + 2;
-        int pMapResY = (int) (height / pMapStep) + 2;
-        Vector2 pMapCenter = new(width / 2, height / 2);
-
-        PMapper = new(pMapResX, pMapResY, pMapStep, pMapCenter, 1);
+    private float _interactionRange = 0.1f;
+    public float InteractionRange {
+        get => _interactionRange;
+        set {
+            _interactionRange = value;
+            InteractionRadius = (float) (_interactionRange * Math.Sqrt(-1 * Math.Log(INTERACTION_THRESHOLD)));
+        }
     }
 
-    public void ClearParticles() => Particles.Clear();
+    protected Particle[] Particles = new Particle[65536];
 
-    public void AddFluid(Vector2 blCorner, Vector2 trCorner) {
-        float step = 1 / ParticleDensity;
-        float pMass = ParticleMass;
+    public FluidBox(Vector2 blCorner, Vector2 trCorner, float particleRadius) {
+        BLCorner = blCorner;
+        TRCorner = trCorner;
+        ParticleRadius = particleRadius;
+    }
 
-        for(float x = blCorner.X; x <= trCorner.X; x += step) {
-            for(float y = blCorner.Y; y <= trCorner.Y; y += step) {
-                Particles.Add(new(pMass, new(x, y), Vector2.Zero));
+    public FluidBox(float width, float height, float particleRadius) : this(new Vector2(0, 0), new Vector2(width, height), particleRadius) { }
+
+    public List<Particle> GetParticles() => Particles.Take(ParticleCount).ToList();
+
+    public void AddFluid(Vector2 bl, Vector2 tr) {
+        for(float x = bl.X; x <= tr.X; x += ParticleRadius) {
+            for(float y = bl.Y; y <= tr.Y; y += ParticleRadius) {
+                if(ParticleCount >= Particles.Length) ExpandParticleArray();
+
+                Particles[ParticleCount] = new(ParticleMass, new(x, y), Vector2.Zero);
+                ParticleCount++;
             }
         }
-    }
-
-    public void RemoveFluid(Vector2 blCorner, Vector2 trCorner) {
-        List<Particle> particlesToRemove = new();
-        for(int i = 0; i < Particles.Count; i++) {
-            Vector2 p = Particles[i].Position;
-            if(p.X >= blCorner.X && p.X <= trCorner.X && p.Y >= blCorner.Y && p.Y <= trCorner.Y) particlesToRemove.Add(Particles[i]);
-        }
-
-        foreach(Particle p in particlesToRemove) Particles.Remove(p);
     }
 
     public void Step() {
+        ApplyViscosity();
         ApplyGravity();
-        ApplyPressure();
-        ApplyNoise();
         ApplyDampening();
-        MoveParticles();
+        //MoveParticles();
+        //HandleCollisions();
+        //MoveAndHandleCollisions();
+        MoveAndHandleCollisions2();
+        // TODO remove
         //DebugCheck();
-        SimulationTime += TimeStep;
     }
 
-    public float[,] Map(float step, float margin) {
-        int resX = (int) ((Width + 2 * margin) / step);
-        int resY = (int) ((Height + 2 * margin) / step);
-        Vector2 center = new(Width / 2, Height / 2);
-        float expectedDensity = (float) Math.Pow(step * ParticleDensity, 2);
+    protected void ApplyViscosity() {
+        for(int i = 0; i < ParticleCount; i++) {
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
 
-        PointDensityMapper mapper = new(resX, resY, step, center, expectedDensity);
-        return mapper.Map(Particles.Select(p => p.Position).ToArray());
-    }
+                float r = Vector2.Distance(Particles[i].Position, Particles[j].Position);
+                if(r < InteractionRadius) {
+                    Vector2 avgVelocity = (Particles[i].Velocity + Particles[j].Velocity) / 2;
+                    float gauss = Gauss(r);
 
-    private void ApplyGravity() {
-        for(int i = 0; i < Particles.Count; i++) {
-            Particles[i] = Particles[i].ApplyAcceleration(Gravity, TimeStep);
-        }
-    }
-
-    private void ApplyNoise() {
-        for(int i = 0; i < Particles.Count; i++) {
-            Particles[i] = Particles[i].ApplyAcceleration(GetRandomNormal() * Noise,  TimeStep);
-        }
-    }
-
-    private void ApplyPressure() {
-        float[,] pressureField = PMapper.Map(Particles.Select(p => p.Position).ToArray());
-
-        int width = pressureField.GetLength(0);
-        int height = pressureField.GetLength(1);
-
-        float[,] flooredPressureField = new float[width, height];
-        for(int x = 0; x < width; x++) {
-            for(int y = 0; y < height; y++) {
-                flooredPressureField[x, y] = pressureField[x, y] < 1 ? 1 : pressureField[x, y];
-            }
-        }
-
-        Vector2[,] diff = Differentiator.Differentiate(flooredPressureField);
-
-        for(int i = 0; i < Particles.Count; i++) {
-            (int x, int y) = PMapper.Pixel(Particles[i].Position);
-            if(x >= 0 && x < width && y >= 0 && y < height) {
-                Particles[i] = Particles[i].ApplyAcceleration(-1 * diff[x, y] * pressureField[x, y] * pressureField[x, y] * PressureSensitivity, TimeStep);
-            } else {
-                Console.WriteLine($"DEGUB WARNING: particle at ({Particles[i].Position.X:F5}, {Particles[i].Position.Y:F5}) outside of pressure field");
+                    Particles[i].Velocity = Vector2.Lerp(Particles[i].Velocity, avgVelocity, gauss * Viscosity * TimeStep);
+                    Particles[j].Velocity = Vector2.Lerp(Particles[j].Velocity, avgVelocity, gauss * Viscosity * TimeStep);
+                }
             }
         }
     }
 
-    private void ApplyDampening() {
-        for(int i = 0; i < Particles.Count; i++) {
-            Vector2 dampAcceleration = -1 * Particles[i].Velocity * Damp;
-            Particles[i] = Particles[i].ApplyAcceleration(dampAcceleration, TimeStep);
+    protected void ApplyDampening() {
+        for(int i = 0; i < ParticleCount; i++) {
+            Particles[i].Velocity *= 1 - (Dampening * TimeStep);
         }
     }
 
-    private void MoveParticles() {
-        for(int i = 0; i < Particles.Count; i++) {
-            Particles[i] = Particles[i].Move(TimeStep);
+    protected void ApplyGravity() {
+        for(int i = 0; i < ParticleCount; i++) {
+            Particles[i].Velocity += Gravity * TimeStep;
+        }
+    }
 
-            if(Particles[i].Position.X < WallRadius) {
-                Particle p = new(Particles[i]);
-                p.Position.X = WallRadius;
-                p.Velocity.X = Math.Max(p.Velocity.X, 0);
+    protected void MoveParticles() {
+        for(int i = 0; i < ParticleCount; i++) {
+            Particles[i].Position += Particles[i].Velocity * TimeStep;
 
-                Particles[i] = p;
-            } else if(Particles[i].Position.X > Width - WallRadius) {
-                Particle p = new(Particles[i]);
-                p.Position.X = Width - WallRadius;
-                p.Velocity.X = Math.Min(p.Velocity.X, 0);
-
-                Particles[i] = p;
+            if(Particles[i].Position.X < BLCorner.X) {
+                Particles[i].Position.X = BLCorner.X;
+                Particles[i].Velocity.X = Math.Max(0, Particles[i].Velocity.X);
+            } else if(Particles[i].Position.X > TRCorner.X) {
+                Particles[i].Position.X = TRCorner.X;
+                Particles[i].Velocity.X = Math.Min(0, Particles[i].Velocity.X);
             }
 
-            if(Particles[i].Position.Y < WallRadius) {
-                Particle p = new(Particles[i]);
-                p.Position.Y = WallRadius;
-                p.Velocity.Y = Math.Max(p.Velocity.Y, 0);
-
-                Particles[i] = p;
-            } else if(Particles[i].Position.Y > Height - WallRadius) {
-                Particle p = new(Particles[i]);
-                p.Position.Y = Height - WallRadius;
-                p.Velocity.Y = Math.Min(p.Velocity.Y, 0);
-
-                Particles[i] = p;
+            if(Particles[i].Position.Y < BLCorner.Y) {
+                Particles[i].Position.Y = BLCorner.Y;
+                Particles[i].Velocity.Y = Math.Max(0, Particles[i].Velocity.Y);
+            } else if(Particles[i].Position.Y > TRCorner.Y) {
+                Particles[i].Position.Y = TRCorner.Y;
+                Particles[i].Velocity.Y = Math.Min(0, Particles[i].Velocity.Y);
             }
         }
     }
 
-    private Vector2 GetRandomNormal() {
+    protected void HandleCollisions() {
+        for(int i = 0; i < ParticleCount; i++) {
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
+
+                Vector2 offset = Particles[j].Position - Particles[i].Position;
+                float r = offset.Length();
+
+                if(r < ParticleRadius) {
+                    Particles[i].Position = Particles[j].Position - ((ParticleRadius / r) * offset);
+
+                    Vector2 deltaV = Project(Particles[i].Velocity - Particles[j].Velocity, offset);
+                    Particles[i].Velocity -= deltaV;
+                    Particles[j].Velocity += deltaV;
+                }
+            }
+        }
+    }
+
+    protected void MoveAndHandleCollisions() {
+        for(int i = 0; i < ParticleCount; i++) {
+            Particles[i].Position += Particles[i].Velocity * TimeStep;
+
+            if(Particles[i].Position.X < BLCorner.X) {
+                Particles[i].Position.X = BLCorner.X;
+                Particles[i].Velocity.X = Math.Max(0, Particles[i].Velocity.X);
+            } else if(Particles[i].Position.X > TRCorner.X) {
+                Particles[i].Position.X = TRCorner.X;
+                Particles[i].Velocity.X = Math.Min(0, Particles[i].Velocity.X);
+            }
+
+            if(Particles[i].Position.Y < BLCorner.Y) {
+                Particles[i].Position.Y = BLCorner.Y;
+                Particles[i].Velocity.Y = Math.Max(0, Particles[i].Velocity.Y);
+            } else if(Particles[i].Position.Y > TRCorner.Y) {
+                Particles[i].Position.Y = TRCorner.Y;
+                Particles[i].Velocity.Y = Math.Min(0, Particles[i].Velocity.Y);
+            }
+
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
+
+                Vector2 offset = Particles[j].Position - Particles[i].Position;
+                float r = offset.Length();
+
+                if(r < ParticleRadius) {
+                    Particles[i].Position = Particles[j].Position - ((ParticleRadius / r) * offset);
+
+                    Vector2 deltaV = Project(Particles[i].Velocity - Particles[j].Velocity, offset);
+                    Particles[i].Velocity -= deltaV;
+                    Particles[j].Velocity += deltaV;
+                }
+            }
+        }
+    }
+
+    protected void MoveAndHandleCollisions2() { // No longer conserves momentum
+        for(int i = 0; i < ParticleCount; i++) {
+            Particles[i].Position += Particles[i].Velocity * TimeStep;
+
+            if(Particles[i].Position.X < BLCorner.X) {
+                Particles[i].Position.X = BLCorner.X;
+                Particles[i].Velocity.X = Math.Max(0, Particles[i].Velocity.X);
+            } else if(Particles[i].Position.X > TRCorner.X) {
+                Particles[i].Position.X = TRCorner.X;
+                Particles[i].Velocity.X = Math.Min(0, Particles[i].Velocity.X);
+            }
+
+            if(Particles[i].Position.Y < BLCorner.Y) {
+                Particles[i].Position.Y = BLCorner.Y;
+                Particles[i].Velocity.Y = Math.Max(0, Particles[i].Velocity.Y);
+            } else if(Particles[i].Position.Y > TRCorner.Y) {
+                Particles[i].Position.Y = TRCorner.Y;
+                Particles[i].Velocity.Y = Math.Min(0, Particles[i].Velocity.Y);
+            }
+
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
+
+                Vector2 offset = Particles[j].Position - Particles[i].Position;
+                float r = offset.Length();
+
+                if(r < ParticleRadius) {
+                    if(r <= 0 || float.IsNaN(r) || float.IsInfinity(r)) { // stupid fucking C# and your stupid NaNs and infinities, if I divide by 0 I expect an error >:(
+                        Particles[i].Position = Particles[j].Position - (ParticleRadius * RandomNormal());
+                        continue;
+                    }
+
+                    Particles[i].Position = Particles[j].Position - ((ParticleRadius / r) * offset);
+
+                    Vector2 deltaV = Project(Particles[i].Velocity - Particles[j].Velocity, offset);
+                    Particles[i].Velocity -= deltaV;
+                    // Removing this line is what makes it not conserve momentum
+                    // Particles[j].Velocity += deltaV;
+                }
+            }
+        }
+    }
+
+    protected float Gauss(float x) => Gauss(x, InteractionRange);
+
+    protected Vector2 Project(Vector2 v, Vector2 onto) {
+        Vector2 direction = Vector2.Normalize(onto);
+        return Vector2.Dot(v, direction) * direction;
+    }
+
+    protected static float Gauss(float x, float r) => (float) Math.Exp(-(x * x) / (r * r));
+
+    protected static Vector2 RandomNormal() {
         double angle = RNG.NextDouble() * 2 * Math.PI;
         (double y, double x) = Math.SinCos(angle);
         return new Vector2((float) x, (float) y);
     }
 
-    private int ParticleCount = -1;
-    private void DebugCheck() {
-        int count = Particles.Count();
-        if(ParticleCount >= 0 && ParticleCount != count) Console.WriteLine($"WARNING! Used to be {ParticleCount} particles, now there are {count}");
-        ParticleCount = count;
+    private void ExpandParticleArray() {
+        int newLength = Particles.Length + PARTICLE_ARRAY_STEP;
+        Particle[] newParticles = new Particle[newLength];
+        for(int i = 0; i < Particles.Length; i++) {
+            newParticles[i] = Particles[i];
+        }
+        Particles = newParticles;
+    }
 
-        foreach(Particle p in Particles) {
-            if(p.Position.X < 0 || p.Position.X > Width || p.Position.Y < 0 || p.Position.Y > Height) {
-                Console.WriteLine($"WARNING! Particle at ({p.Position.X}, {p.Position.Y}), outside of bounding box");
+    private void DebugCheck() {
+        for(int i = 0; i < ParticleCount; i++) {
+            Particle p = Particles[i];
+            if(
+                p.Position.X < BLCorner.X - ParticleRadius ||
+                p.Position.X > TRCorner.X + ParticleRadius ||
+                p.Position.Y < BLCorner.Y - ParticleRadius ||
+                p.Position.Y > TRCorner.Y + ParticleRadius
+            ) Console.WriteLine($"\nParticle out of bounds at ({p.Position.X}, {p.Position.Y})!");
+
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
+                
+                Particle q = Particles[j];
+                if(p.Position.X == q.Position.X && p.Position.Y == q.Position.Y) Console.WriteLine($"\nParticles overlapping at ({p.Position.X}, {p.Position.Y})!");
             }
         }
     }
