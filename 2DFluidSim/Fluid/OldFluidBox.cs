@@ -31,7 +31,7 @@ internal class OldFluidBox {
 
     public List<Particle> Particles = new List<Particle>();
 
-    public FluidBox(float width, float height, float particleDensity = 100) {
+    public OldFluidBox(float width, float height, float particleDensity = 100) {
         Width = width;
         Height = height;
         ParticleDensity = particleDensity;

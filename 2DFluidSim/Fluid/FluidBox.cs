@@ -17,6 +17,8 @@ internal class FluidBox {
     public float Width { get => TRCorner.X - BLCorner.X; }
     public float Height { get => TRCorner.Y - BLCorner.Y; }
 
+    public float SimulationTime { get; private set; } = 0;
+
     public float TimeStep = 0.01f;
     public float Viscosity = 1;
     public float Dampening = 0.5f;
@@ -63,12 +65,18 @@ internal class FluidBox {
         ApplyViscosity();
         ApplyGravity();
         ApplyDampening();
-        //MoveParticles();
-        //HandleCollisions();
-        //MoveAndHandleCollisions();
-        MoveAndHandleCollisions2();
-        // TODO remove
-        //DebugCheck();
+        ////MoveParticles();
+        ////HandleCollisions();
+        ////MoveAndHandleCollisions();
+        //MoveAndHandleCollisions2();
+        //// TODO remove
+        ////DebugCheck();
+        MoveParticles2();
+        HandleCollisions2();
+        HandleCollisions2();
+        HandleCollisions2();
+        HandleCollisions2();
+        SimulationTime += TimeStep;
     }
 
     protected void ApplyViscosity() {
@@ -122,6 +130,12 @@ internal class FluidBox {
         }
     }
 
+    protected void MoveParticles2() {
+        for(int i = 0; i < ParticleCount; i++) {
+            Particles[i].Position += Particles[i].Velocity * TimeStep;
+        }
+    }
+
     protected void HandleCollisions() {
         for(int i = 0; i < ParticleCount; i++) {
             for(int j = 0; j < ParticleCount; j++) {
@@ -137,6 +151,65 @@ internal class FluidBox {
                     Particles[i].Velocity -= deltaV;
                     Particles[j].Velocity += deltaV;
                 }
+            }
+        }
+    }
+
+    protected void HandleCollisions2() {
+        List<(int index, float priority)> priorities = new();
+
+        for(int i = 0; i < ParticleCount; i++) {
+            float pr = 0;
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
+
+                float r = Vector2.Distance(Particles[i].Position, Particles[j].Position);
+
+                //if(r < ParticleRadius) {
+                //    pr += ParticleRadius - r;
+                //}
+
+                pr += 1 / r;
+            }
+
+            priorities.Add((i, pr));
+        }
+
+        foreach(int i in priorities.OrderByDescending(p => p.priority).Select(p => p.index)) {
+            for(int j = 0; j < ParticleCount; j++) {
+                if(i == j) continue;
+
+                Vector2 offset = Particles[j].Position - Particles[i].Position;
+                float r = offset.Length();
+
+                if(r < ParticleRadius) {
+                    if(r <= 0 || !float.IsFinite(r)) { // stupid fucking C# and your stupid NaNs and infinities, if I divide by 0 I expect an error >:(
+                        Particles[i].Position = Particles[j].Position - (ParticleRadius * RandomNormal());
+                        continue;
+                    }
+
+                    Particles[i].Position = Particles[j].Position - ((ParticleRadius / r) * offset);
+
+                    Vector2 deltaV = Project(Particles[i].Velocity - Particles[j].Velocity, offset);
+                    Particles[i].Velocity -= deltaV / 2;
+                    Particles[j].Velocity += deltaV / 2;
+                }
+            }
+
+            if(Particles[i].Position.X < BLCorner.X) {
+                Particles[i].Position.X = BLCorner.X;
+                Particles[i].Velocity.X = Math.Max(0, Particles[i].Velocity.X);
+            } else if(Particles[i].Position.X > TRCorner.X) {
+                Particles[i].Position.X = TRCorner.X;
+                Particles[i].Velocity.X = Math.Min(0, Particles[i].Velocity.X);
+            }
+
+            if(Particles[i].Position.Y < BLCorner.Y) {
+                Particles[i].Position.Y = BLCorner.Y;
+                Particles[i].Velocity.Y = Math.Max(0, Particles[i].Velocity.Y);
+            } else if(Particles[i].Position.Y > TRCorner.Y) {
+                Particles[i].Position.Y = TRCorner.Y;
+                Particles[i].Velocity.Y = Math.Min(0, Particles[i].Velocity.Y);
             }
         }
     }
